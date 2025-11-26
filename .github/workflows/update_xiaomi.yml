@@ -25,6 +25,8 @@ jobs:
         run: pip install requests
 
       - name: Run script
+        env:
+          ALLTICK_TOKEN: ${{ secrets.ALLTICK_TOKEN }}
         run: python update_xiaomi.py
 
       - name: Commit & Push
@@ -38,5 +40,3 @@ jobs:
           else
             echo "No changes"
           fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
