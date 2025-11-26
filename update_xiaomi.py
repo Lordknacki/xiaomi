@@ -5,9 +5,30 @@ from datetime import datetime, timezone
 YAHOO_QUOTE_URL = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=1810.HK"
 FX_URL = "https://api.frankfurter.app/latest?from=HKD&to=EUR"
 
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+}
+
 def get_xiaomi_hkd():
-    r = requests.get(YAHOO_QUOTE_URL, timeout=15)
-    data = r.json()
+    r = requests.get(YAHOO_QUOTE_URL, headers=HEADERS, timeout=15)
+    # Debug minimal pour voir ce que Yahoo renvoie
+    print("Yahoo status:", r.status_code)
+    print("Yahoo content-type:", r.headers.get("Content-Type", ""))
+    text_preview = r.text[:300].replace("\n", " ")
+    print("Yahoo body preview:", text_preview)
+
+    try:
+        data = r.json()
+    except json.JSONDecodeError:
+        raise RuntimeError(
+            f"Réponse non JSON de Yahoo (code {r.status_code}) : {text_preview}"
+        )
 
     try:
         result = data["quoteResponse"]["result"][0]
@@ -23,15 +44,25 @@ def get_xiaomi_hkd():
         raise RuntimeError(f"Prix HKD introuvable : {result}")
 
     if ts:
-        last_time = datetime.fromtimestamp(ts).isoformat()
+        last_time = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
     else:
         last_time = None
 
     return price_hkd, change_hkd, change_pct, last_time
 
 def get_hkd_to_eur():
-    r = requests.get(FX_URL, timeout=15)
-    data = r.json()
+    r = requests.get(FX_URL, headers=HEADERS, timeout=15)
+    print("FX status:", r.status_code)
+    print("FX content-type:", r.headers.get("Content-Type", ""))
+    text_preview = r.text[:200].replace("\n", " ")
+    print("FX body preview:", text_preview)
+
+    try:
+        data = r.json()
+    except json.JSONDecodeError:
+        raise RuntimeError(
+            f"Réponse non JSON de Frankfurter (code {r.status_code}) : {text_preview}"
+        )
 
     try:
         return float(data["rates"]["EUR"])
