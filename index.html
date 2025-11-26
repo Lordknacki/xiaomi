@@ -4,10 +4,8 @@
   <meta charset="UTF-8">
   <title>Cours Xiaomi (1810.HK) en EUR</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-
     body {
       background: #000;
       color: #f5f5f5;
@@ -17,7 +15,6 @@
       justify-content: center;
       height: 100vh;
     }
-
     .card {
       text-align: center;
       padding: 20px 30px;
@@ -25,71 +22,22 @@
       border: 1px solid #333;
       min-width: 260px;
     }
-
-    .title {
-      font-size: 18px;
-      margin-bottom: 6px;
-      opacity: 0.8;
-    }
-
-    .ticker {
-      font-size: 22px;
-      font-weight: 600;
-      letter-spacing: 2px;
-      margin-bottom: 12px;
-    }
-
-    .label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      opacity: 0.7;
-      margin-bottom: 4px;
-    }
-
-    .price-eur {
-      font-size: 40px;
-      font-weight: 700;
-      margin-bottom: 6px;
-    }
-
-    .price-hkd {
-      font-size: 14px;
-      opacity: 0.7;
-      margin-bottom: 8px;
-    }
-
-    .change {
-      font-size: 16px;
-      margin-bottom: 8px;
-    }
-
+    .title { font-size: 18px; margin-bottom: 6px; opacity: 0.8; }
+    .ticker { font-size: 22px; font-weight: 600; letter-spacing: 2px; margin-bottom: 12px; }
+    .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.7; margin-bottom: 4px; }
+    .price-eur { font-size: 40px; font-weight: 700; margin-bottom: 6px; }
+    .price-hkd { font-size: 14px; opacity: 0.7; margin-bottom: 8px; }
+    .change { font-size: 16px; margin-bottom: 8px; }
     .change.positive { color: #4caf50; }
     .change.negative { color: #f44336; }
-
-    .time {
-      font-size: 11px;
-      opacity: 0.6;
-      margin-top: 4px;
-    }
-
-    .error {
-      color: #ff5555;
-      font-size: 13px;
-      margin-top: 8px;
-      display: none;
-    }
-
-    .loading {
-      font-size: 13px;
-      opacity: 0.8;
-      margin-top: 6px;
-    }
+    .time { font-size: 11px; opacity: 0.6; margin-top: 4px; }
+    .error { color: #ff5555; font-size: 13px; margin-top: 8px; display: none; }
+    .loading { font-size: 13px; opacity: 0.8; margin-top: 6px; }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="title">Cours quasi temps réel</div>
+    <div class="title">Cours (maj automatique)</div>
     <div class="ticker">XIAOMI • 1810.HK</div>
 
     <div class="label">Prix actuel (EUR)</div>
@@ -99,7 +47,7 @@
 
     <div id="change" class="change">-- (--%)</div>
 
-    <div class="time" id="time">Mise à jour : --</div>
+    <div class="time" id="time">Dernière mise à jour : --</div>
 
     <div id="loading" class="loading">Chargement...</div>
     <div id="error" class="error"></div>
@@ -113,75 +61,37 @@
     const loadingEl = document.getElementById("loading");
     const errorEl = document.getElementById("error");
 
-    async function fetchQuoteInEur() {
+    async function loadXiaomi() {
       loadingEl.style.display = "block";
       errorEl.style.display = "none";
       errorEl.textContent = "";
 
       try {
-        // 1) Cours Xiaomi (HKD) via Yahoo Finance
-        const yahooQuoteUrl = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=1810.HK";
-        const quoteRes = await fetch(yahooQuoteUrl);
-        if (!quoteRes.ok) throw new Error("Erreur réseau (Yahoo quote): " + quoteRes.status);
-        const quoteData = await quoteRes.json();
+        const res = await fetch("xiaomi.json?cachebuster=" + Date.now());
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
 
-        const result = quoteData.quoteResponse && quoteData.quoteResponse.result && quoteData.quoteResponse.result[0];
-        if (!result) {
-          throw new Error("Données de cours introuvables (Yahoo)");
-        }
+        const priceEur = data.price_eur;
+        const priceHkd = data.price_hkd;
+        const changeHkd = data.change_hkd;
+        const changePct = data.change_percent;
+        const lastTime = data.last_trading_time;
+        const generated = data.generated_at_utc;
 
-        const priceHkd = result.regularMarketPrice;
-        const changeHkd = result.regularMarketChange;
-        const changePct = result.regularMarketChangePercent;
-        const ts = result.regularMarketTime ? result.regularMarketTime * 1000 : null;
-
-        if (priceHkd == null) {
-          throw new Error("Prix introuvable pour Xiaomi");
-        }
-
-        // 2) Taux HKD -> EUR via Frankfurter
-        const fxUrl = "https://api.frankfurter.app/latest?from=HKD&to=EUR";
-        const fxRes = await fetch(fxUrl);
-        if (!fxRes.ok) throw new Error("Erreur réseau (FX): " + fxRes.status);
-        const fxData = await fxRes.json();
-
-        const rateHkdEur = fxData.rates && fxData.rates.EUR;
-        if (!rateHkdEur) {
-          throw new Error("Taux de change HKD/EUR introuvable");
-        }
-
-        const priceEur = priceHkd * rateHkdEur;
-
-        // 3) Affichage
         priceEurEl.textContent = priceEur.toFixed(2).replace(".", ",") + " €";
         priceHkdEl.textContent = "≈ " + priceHkd.toFixed(2) + " HKD";
 
         let changeText = "-- (--%)";
-        if (changeHkd != null && changePct != null) {
+        if (typeof changeHkd === "number" && typeof changePct === "number") {
           const sign = changeHkd > 0 ? "+" : "";
           changeText = `${sign}${changeHkd.toFixed(2)} HKD (${sign}${changePct.toFixed(2)}%)`;
         }
         changeEl.textContent = changeText;
         changeEl.classList.remove("positive", "negative");
-        if (changeHkd > 0) {
-          changeEl.classList.add("positive");
-        } else if (changeHkd < 0) {
-          changeEl.classList.add("negative");
-        }
+        if (changeHkd > 0) changeEl.classList.add("positive");
+        else if (changeHkd < 0) changeEl.classList.add("negative");
 
-        if (ts) {
-          const date = new Date(ts);
-          const optsDate = { year: "numeric", month: "2-digit", day: "2-digit" };
-          const optsTime = { hour: "2-digit", minute: "2-digit", second: "2-digit" };
-          timeEl.textContent =
-            "Mise à jour : " +
-            date.toLocaleDateString("fr-FR", optsDate) +
-            " " +
-            date.toLocaleTimeString("fr-FR", optsTime);
-        } else {
-          timeEl.textContent = "Mise à jour : (heure inconnue)";
-        }
-
+        timeEl.textContent = "Dernière mise à jour : " + lastTime + " (UTC gen: " + generated + ")";
       } catch (err) {
         console.error(err);
         errorEl.style.display = "block";
@@ -191,10 +101,9 @@
       }
     }
 
-    // Premier appel
-    fetchQuoteInEur();
-    // Rafraîchissement toutes les 2 minutes
-    setInterval(fetchQuoteInEur, 120_000);
+    loadXiaomi();
+    // (optionnel) rafraîchir côté navigateur, mais ça ne change que si xiaomi.json a été mis à jour par l'action
+    setInterval(loadXiaomi, 300_000);
   </script>
 </body>
 </html>
