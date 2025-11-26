@@ -89,28 +89,23 @@
 </head>
 <body>
   <div class="card">
-    <div class="title">Cours (données quotidiennes)</div>
+    <div class="title">Cours quasi temps réel</div>
     <div class="ticker">XIAOMI • 1810.HK</div>
 
-    <div class="label">Prix estimé (EUR)</div>
+    <div class="label">Prix actuel (EUR)</div>
     <div id="price-eur" class="price-eur">--,-- €</div>
 
     <div id="price-hkd" class="price-hkd">≈ --,-- HKD</div>
 
-    <div id="change" class="change">Var. journalière : -- (--%)</div>
+    <div id="change" class="change">-- (--%)</div>
 
-    <div class="time" id="time">Dernière séance : --</div>
+    <div class="time" id="time">Mise à jour : --</div>
 
     <div id="loading" class="loading">Chargement...</div>
     <div id="error" class="error"></div>
   </div>
 
   <script>
-    const API_KEY = "MQVABCZ827XVHMA5";   // ta clé
-    const SYMBOL = "1810.HK";
-    const FROM_CCY = "HKD";
-    const TO_CCY = "EUR";
-
     const priceEurEl = document.getElementById("price-eur");
     const priceHkdEl = document.getElementById("price-hkd");
     const changeEl = document.getElementById("change");
@@ -118,79 +113,59 @@
     const loadingEl = document.getElementById("loading");
     const errorEl = document.getElementById("error");
 
+    const ALLORIGINS = "https://api.allorigins.win/raw?url=";
+
+    async function fetchJsonViaProxy(url) {
+      const proxied = ALLORIGINS + encodeURIComponent(url);
+      const res = await fetch(proxied);
+      if (!res.ok) throw new Error("Erreur réseau " + res.status);
+      return res.json();
+    }
+
     async function fetchQuoteInEur() {
       loadingEl.style.display = "block";
       errorEl.style.display = "none";
       errorEl.textContent = "";
 
       try {
-        // 1) Données quotidiennes Xiaomi (HKD)
-        const dailyUrl =
-          `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(SYMBOL)}&outputsize=compact&apikey=${API_KEY}`;
-        const dailyRes = await fetch(dailyUrl);
-        if (!dailyRes.ok) throw new Error("Erreur réseau (TIME_SERIES_DAILY_ADJUSTED): " + dailyRes.status);
+        // 1) Cours de Xiaomi (HKD) via Yahoo Finance
+        const yahooQuoteUrl = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=1810.HK";
+        const quoteData = await fetchJsonViaProxy(yahooQuoteUrl);
 
-        const dailyData = await dailyRes.json();
-        console.log("TIME_SERIES_DAILY_ADJUSTED brute:", dailyData);
-
-        const series = dailyData["Time Series (Daily)"];
-        if (!series) {
-          const note = dailyData["Note"] || dailyData["Error Message"] || "";
-          throw new Error("Données de cours introuvables (TIME_SERIES_DAILY_ADJUSTED) " + note);
+        const result = quoteData.quoteResponse?.result?.[0];
+        if (!result) {
+          throw new Error("Données de cours introuvables (Yahoo)");
         }
 
-        // Dernière date de cotation
-        const dates = Object.keys(series).sort(); // tri croissant
-        const lastDate = dates[dates.length - 1];
-        const prevDate = dates[dates.length - 2]; // veille (si dispo)
+        const priceHkd = result.regularMarketPrice;
+        const changeHkd = result.regularMarketChange;
+        const changePct = result.regularMarketChangePercent;
+        const ts = result.regularMarketTime * 1000; // timestamp en secondes -> ms
 
-        const lastBar = series[lastDate];
-        const prevBar = prevDate ? series[prevDate] : null;
-
-        const closeHkd = parseFloat(lastBar["4. close"]);
-        const prevCloseHkd = prevBar ? parseFloat(prevBar["4. close"]) : NaN;
-
-        if (isNaN(closeHkd)) {
-          throw new Error("Prix de clôture invalide pour " + lastDate);
+        if (priceHkd == null) {
+          throw new Error("Prix introuvable pour Xiaomi");
         }
 
-        let changeHkd = NaN;
-        let changePct = NaN;
-        if (!isNaN(prevCloseHkd)) {
-          changeHkd = closeHkd - prevCloseHkd;
-          changePct = (changeHkd / prevCloseHkd) * 100;
+        // 2) Taux HKD -> EUR via Yahoo Finance (pair HKDEUR=X)
+        const yahooFxUrl = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=HKDEUR=X";
+        const fxData = await fetchJsonViaProxy(yahooFxUrl);
+
+        const fxResult = fxData.quoteResponse?.result?.[0];
+        if (!fxResult || fxResult.regularMarketPrice == null) {
+          throw new Error("Taux de change HKD/EUR introuvable");
         }
 
-        // 2) Taux HKD -> EUR
-        const fxUrl =
-          `https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=${FROM_CCY}&to_currency=${TO_CCY}&apikey=${API_KEY}`;
-        const fxRes = await fetch(fxUrl);
-        if (!fxRes.ok) throw new Error("Erreur réseau (FX): " + fxRes.status);
-
-        const fxData = await fxRes.json();
-        console.log("CURRENCY_EXCHANGE_RATE brute:", fxData);
-
-        const fx = fxData["Realtime Currency Exchange Rate"];
-        if (!fx || !fx["5. Exchange Rate"]) {
-          const note = fxData["Note"] || fxData["Error Message"] || "";
-          throw new Error("Taux de change introuvable (HKD/EUR) " + note);
-        }
-
-        const rateHkdEur = parseFloat(fx["5. Exchange Rate"]); // 1 HKD -> X EUR
-        if (isNaN(rateHkdEur)) {
-          throw new Error("Taux de change invalide");
-        }
-
-        const priceEur = closeHkd * rateHkdEur;
+        const rateHkdEur = fxResult.regularMarketPrice; // 1 HKD = X EUR
+        const priceEur = priceHkd * rateHkdEur;
 
         // 3) Affichage
         priceEurEl.textContent = priceEur.toFixed(2).replace(".", ",") + " €";
-        priceHkdEl.textContent = "≈ " + closeHkd.toFixed(2) + " HKD";
+        priceHkdEl.textContent = "≈ " + priceHkd.toFixed(2) + " HKD";
 
-        let changeText = "Var. journalière : -- (--%)";
-        if (!isNaN(changeHkd) && !isNaN(changePct)) {
+        let changeText = "-- (--%)";
+        if (changeHkd != null && changePct != null) {
           const sign = changeHkd > 0 ? "+" : "";
-          changeText = `Var. journalière : ${sign}${changeHkd.toFixed(2)} HKD (${sign}${changePct.toFixed(2)}%)`;
+          changeText = `${sign}${changeHkd.toFixed(2)} HKD (${sign}${changePct.toFixed(2)}%)`;
         }
         changeEl.textContent = changeText;
         changeEl.classList.remove("positive", "negative");
@@ -200,7 +175,16 @@
           changeEl.classList.add("negative");
         }
 
-        timeEl.textContent = "Dernière séance : " + lastDate;
+        if (!isNaN(ts)) {
+          const date = new Date(ts);
+          const optsDate = { year: "numeric", month: "2-digit", day: "2-digit" };
+          const optsTime = { hour: "2-digit", minute: "2-digit", second: "2-digit" };
+          timeEl.textContent =
+            "Mise à jour : " +
+            date.toLocaleDateString("fr-FR", optsDate) +
+            " " +
+            date.toLocaleTimeString("fr-FR", optsTime);
+        }
 
       } catch (err) {
         console.error(err);
@@ -213,8 +197,8 @@
 
     // Premier appel
     fetchQuoteInEur();
-    // Rafraîchissement toutes les 10 minutes (pour éviter les limites d'API)
-    setInterval(fetchQuoteInEur, 600_000);
+    // Rafraîchissement toutes les 2 minutes
+    setInterval(fetchQuoteInEur, 120_000);
   </script>
 </body>
 </html>
