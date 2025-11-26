@@ -2,15 +2,11 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Cours Xiaomi (1810.HK)</title>
+  <title>Cours Xiaomi (1810.HK) en EUR</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       background: #000;
@@ -31,60 +27,63 @@
     }
 
     .title {
-      font-size: 20px;
-      margin-bottom: 8px;
+      font-size: 18px;
+      margin-bottom: 6px;
       opacity: 0.8;
     }
 
     .ticker {
-      font-size: 26px;
+      font-size: 22px;
       font-weight: 600;
       letter-spacing: 2px;
       margin-bottom: 12px;
     }
 
-    .price {
-      font-size: 42px;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-
-    .change {
-      font-size: 18px;
-      margin-bottom: 10px;
-    }
-
-    .change.positive {
-      color: #4caf50;
-    }
-
-    .change.negative {
-      color: #f44336;
-    }
-
     .label {
-      font-size: 12px;
+      font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 1px;
       opacity: 0.7;
       margin-bottom: 4px;
     }
 
+    .price-eur {
+      font-size: 40px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .price-hkd {
+      font-size: 14px;
+      opacity: 0.7;
+      margin-bottom: 8px;
+    }
+
+    .change {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    .change.positive { color: #4caf50; }
+    .change.negative { color: #f44336; }
+
     .time {
-      font-size: 12px;
+      font-size: 11px;
       opacity: 0.6;
+      margin-top: 4px;
     }
 
     .error {
       color: #ff5555;
-      font-size: 14px;
-      margin-top: 10px;
+      font-size: 13px;
+      margin-top: 8px;
+      display: none;
     }
 
     .loading {
-      font-size: 14px;
+      font-size: 13px;
       opacity: 0.8;
-      margin-top: 8px;
+      margin-top: 6px;
     }
   </style>
 </head>
@@ -93,57 +92,80 @@
     <div class="title">Cours en direct</div>
     <div class="ticker">XIAOMI • 1810.HK</div>
 
-    <div class="label">Prix actuel (HKD)</div>
-    <div id="price" class="price">--.--</div>
+    <div class="label">Prix actuel (EUR)</div>
+    <div id="price-eur" class="price-eur">--,-- €</div>
+
+    <div id="price-hkd" class="price-hkd">≈ --,-- HKD</div>
 
     <div id="change" class="change">-- (--%)</div>
 
     <div class="time" id="time">Mise à jour : --</div>
 
     <div id="loading" class="loading">Chargement...</div>
-    <div id="error" class="error" style="display:none;"></div>
+    <div id="error" class="error"></div>
   </div>
 
   <script>
-    const API_KEY = "MQVABCZ827XVHMA5";  // Ta clé API
+    const API_KEY = "MQVABCZ827XVHMA5";   // ta clé
     const SYMBOL = "1810.HK";
+    const FROM_CCY = "HKD";
+    const TO_CCY = "EUR";
 
-    const priceEl = document.getElementById("price");
+    const priceEurEl = document.getElementById("price-eur");
+    const priceHkdEl = document.getElementById("price-hkd");
     const changeEl = document.getElementById("change");
     const timeEl = document.getElementById("time");
     const loadingEl = document.getElementById("loading");
     const errorEl = document.getElementById("error");
 
-    async function fetchQuote() {
+    async function fetchQuoteInEur() {
       loadingEl.style.display = "block";
       errorEl.style.display = "none";
       errorEl.textContent = "";
 
       try {
-        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(SYMBOL)}&apikey=${API_KEY}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Erreur réseau : " + res.status);
-
-        const data = await res.json();
-
-        const quote = data["Global Quote"];
+        // 1) Cours Xiaomi en HKD
+        const quoteUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(SYMBOL)}&apikey=${API_KEY}`;
+        const quoteRes = await fetch(quoteUrl);
+        if (!quoteRes.ok) throw new Error("Erreur réseau (GLOBAL_QUOTE): " + quoteRes.status);
+        const quoteData = await quoteRes.json();
+        const quote = quoteData["Global Quote"];
         if (!quote || !quote["05. price"]) {
-          throw new Error("Données de cours introuvables");
+          throw new Error("Données de cours introuvables (GLOBAL_QUOTE)");
         }
 
-        const price = parseFloat(quote["05. price"]);
+        const priceHkd = parseFloat(quote["05. price"]);
         const change = parseFloat(quote["09. change"]);
-        const changePercent = parseFloat(quote["10. change percent"]);
+        const changePctRaw = quote["10. change percent"]; // ex: "1.23%"
+        const changePct = changePctRaw ? parseFloat(changePctRaw) : NaN;
 
-        priceEl.textContent = price.toFixed(2);
-
-        let changeText = "";
-        if (!isNaN(change) && !isNaN(changePercent)) {
-          changeText = `${change.toFixed(2)} (${changePercent.toFixed(2)}%)`;
-        } else {
-          changeText = "-- (--%)";
+        // 2) Taux HKD -> EUR
+        const fxUrl =
+          `https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE` +
+          `&from_currency=${FROM_CCY}&to_currency=${TO_CCY}&apikey=${API_KEY}`;
+        const fxRes = await fetch(fxUrl);
+        if (!fxRes.ok) throw new Error("Erreur réseau (FX): " + fxRes.status);
+        const fxData = await fxRes.json();
+        const fx = fxData["Realtime Currency Exchange Rate"];
+        if (!fx || !fx["5. Exchange Rate"]) {
+          throw new Error("Taux de change introuvable (HKD/EUR)");
         }
 
+        const rateHkdEur = parseFloat(fx["5. Exchange Rate"]); // 1 HKD -> X EUR
+        if (isNaN(rateHkdEur)) {
+          throw new Error("Taux de change invalide");
+        }
+
+        const priceEur = priceHkd * rateHkdEur;
+
+        // 3) Affichage
+        priceEurEl.textContent = priceEur.toFixed(2).replace(".", ",") + " €";
+        priceHkdEl.textContent = "≈ " + priceHkd.toFixed(2) + " HKD";
+
+        let changeText = "-- (--%)";
+        if (!isNaN(change) && !isNaN(changePct)) {
+          changeText = `${change.toFixed(2)} HKD (${changePct.toFixed(2)}%)`;
+        }
         changeEl.textContent = changeText;
         changeEl.classList.remove("positive", "negative");
         if (change > 0) {
@@ -165,8 +187,10 @@
       }
     }
 
-    fetchQuote();
-    setInterval(fetchQuote, 60_000);
+    // Premier appel
+    fetchQuoteInEur();
+    // Rafraîchissement toutes les 2 minutes (pour limiter les appels API)
+    setInterval(fetchQuoteInEur, 120_000);
   </script>
 </body>
 </html>
